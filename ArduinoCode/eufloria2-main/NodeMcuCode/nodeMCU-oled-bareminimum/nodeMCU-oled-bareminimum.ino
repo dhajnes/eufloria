@@ -1,0 +1,80 @@
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128 
+#define SCREEN_HEIGHT 64 
+#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+#define SCREEN_ADDRESS 0x3C
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+#define LOGO_HEIGHT   40
+#define LOGO_WIDTH    24
+static const unsigned char PROGMEM logo_bmp[] = { 
+  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
+  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x7, 
+  0x0, 0x0, 0xf, 0x0, 0x0, 0x3f, 0x0, 0x0, 0xff, 0x0, 0x3, 0xff, 
+  0x0, 0xf, 0xff, 0x0, 0x3f, 0xff, 0x0, 0x7f, 0xee, 0x1, 0xff, 0xee, 
+  0x3, 0xff, 0xce, 0x7, 0xff, 0xde, 0x7, 0xff, 0x9c, 0xf, 0xff, 0x3c, 
+  0xf, 0xfe, 0x3c, 0x1f, 0xfe, 0x78, 0x1f, 0xf8, 0xf8, 0x1f, 0xf1, 0xf0, 
+  0x1f, 0xe3, 0xe0, 0x1f, 0xc7, 0xc0, 0x1f, 0x1f, 0x80, 0x1c, 0x3f, 0x0, 
+  0x10, 0xfc, 0x0, 0x3, 0xf0, 0x0, 0xf, 0xc0, 0x0, 0x1f, 0x0, 0x0, 
+  0x38, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
+  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
+};
+
+void setup() {
+  Serial.begin(9600);
+
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+  display.display();
+  delay(2000); // Pause for 2 seconds
+
+  // Clear the buffer
+  display.clearDisplay();
+  drawLogo();
+
+}
+
+void loop() {
+  
+}
+
+void drawLogo(void) {
+  display.clearDisplay();
+
+  display.drawBitmap(
+    (display.width()  - LOGO_WIDTH ) / 2,
+    (display.height() - LOGO_HEIGHT) / 2 - 10,
+    logo_bmp, LOGO_WIDTH, LOGO_HEIGHT, 1);
+
+  display.setTextSize(1);  
+  display.setTextColor(SSD1306_WHITE); // Draw white text
+  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+  display.setCursor(display.width()/2 - 25, 44);
+  display.println(F("eufloria"));
+  display.display();
+
+  display.setCursor(display.width()/2 - 10, 54);
+  display.println(F("v.2"));
+  display.display();
+  
+  display.invertDisplay(true);
+  display.display();
+  delay(1000);
+  display.invertDisplay(false);
+  display.display();
+  delay(1000);
+  display.invertDisplay(true);
+  display.display();
+  delay(1000);
+  display.invertDisplay(false);
+  display.display();
+  delay(1000);
+}

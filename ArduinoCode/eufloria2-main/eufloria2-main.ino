@@ -4,6 +4,7 @@
 #include <SPI.h>
 #include <SD.h>
 
+// DHT thermo and hygrometer setup
 #define DHTPIN 2
 #define DHTTYPE DHT11
 
@@ -20,9 +21,10 @@
 // setup of the solar panel
 #define lightPin4 A4
 
+#define chipSelect 4
+
 DHT dht(DHTPIN, DHTTYPE);
 SoftwareSerial s(5,6);
-File myFile;
 
 int wetVal0 = 0;
 int wetVal1 = 0;
@@ -34,15 +36,14 @@ float temp = 0;
 
 int lightVal = 0;
 
-struct Time{
+struct Time {
   int year;
   int month;
   int day;
   int hour;
   int minute;
   int second;
-  } datetime;
-
+  } timestamp;
 
 void setup() {
   pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
@@ -53,14 +54,24 @@ void setup() {
   const float tankHeight = 36  //cm
   const float tankCapacity = 36  //litres - a coincidence :D
   float tankState = 0 //litres
-
 }
 
-void checkWaterReserve(){
-    // Clears the trigPin condition
+Time getInternetTime(){
+  // send a serial comm reqeust for time
+  // for example a "t"
+  if(s.available()>0){
+    //s.write(data);
+
+    //doc.printTo(s);
+    serializeJsonPretty(doc, s);
+  }
+  
+  }
+
+float checkWaterReserve(){
+  // Clears the trigPin condition
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
-  
   // Sets the trigPin HIGH (ACTIVE) for 10 microseconds
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
@@ -69,27 +80,25 @@ void checkWaterReserve(){
   duration = pulseIn(echoPin, HIGH);
   // Calculating the distance
   distance = duration * 0.034 / 2; // Speed of sound wave divided by 2 (go and back)
-  // 38 cm is the active height of the canister - 4 cm of the sensor overhead = 34
+  
+  // 38 cm is the active height of the canister - 4 cm of sensor overhead = 34
   // the volume shall then be cca 3.4 * 3.6 * 2.8 = ~ 34 litres
   // current volume of water in the tank: (height - measValue)/height * fullVolume
   tankState = (tankHeight - distance)/tankHeight * tankCapacity  //litres
   }
 
-Time getInternetTime(){
-  s.write('t');
-  if (s.available()>0){
-    data=s.read();
-    return data;
-    }
-  else {
-    return -1;
-    }
+void saveToCard(){
+  
   }
+
+
+
 
 void loop() {
 
 delay(1000);
 
+tankState = checkWaterReserve();
 lightVal = analogRead(lightPin4);
 hum = dht.readHumidity();
 temp = dht.readTemperature();
