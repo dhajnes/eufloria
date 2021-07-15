@@ -1,3 +1,7 @@
+
+// IMPORTANT NOTE
+// THE IMAGES NEED TO BE IN THE MULTIPLE OF 8 to be possible to show on the OLED display
+
 leaf logo byte array 56 x 72
 #define LOGO_HEIGHT   72
 #define LOGO_WIDTH    56
@@ -76,3 +80,4 @@ static const unsigned char PROGMEM logo_bmp[] = {
   0x0, 0x0, 0x0, 0x0, 
 };
 
+// useful link for translating .png to bytearray: https://manytools.org/hacker-tools/image-to-byte-array/go/
