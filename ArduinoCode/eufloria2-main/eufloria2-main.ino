@@ -5,7 +5,7 @@
 #include <SD.h>
 
 // DHT thermo and hygrometer setup
-#define DHTPIN 2
+#define DHTPIN 10
 #define DHTTYPE DHT11
 
 // setup of the soil moisture sensors
@@ -18,13 +18,19 @@
 #define echoPin 8 
 #define trigPin 9 
 
+#define pumpPin 3
+#define valvePin1 2
+#define valvePin2 1
+#define valvePin3 0
+
+
 // setup of the solar panel
 #define lightPin4 A4
 
 #define chipSelect 4
 
 DHT dht(DHTPIN, DHTTYPE);
-SoftwareSerial s(5,6);
+SoftwareSerial s(5,6); //RX, TX
 
 int wetVal0 = 0;
 int wetVal1 = 0;
@@ -45,15 +51,22 @@ struct Time {
   int second;
   } timestamp;
 
+const float tankHeight = 36;  //cm
+const float tankCapacity = 36;  //litres - a coincidence :D
+float tankState = 0; //litres
+DynamicJsonDocument doc(256);
+
 void setup() {
+  pinMode(pumpPin, OUTPUT);
+  pinMode(valvePin1, OUTPUT);
+  pinMode(valvePin2, OUTPUT);
+  pinMode(valvePin3, OUTPUT);
   pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
   pinMode(echoPin, INPUT); // Sets the echoPin as an INPUT
-  Serial.begin(9600);
-  s.begin(9600);
+  //Serial.begin(9600);
+  s.begin(4800);
   dht.begin();
-  const float tankHeight = 36  //cm
-  const float tankCapacity = 36  //litres - a coincidence :D
-  float tankState = 0 //litres
+  
 }
 
 Time getInternetTime(){
@@ -77,14 +90,14 @@ float checkWaterReserve(){
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
   // Reads the echoPin, returns the sound wave travel time in microseconds
-  duration = pulseIn(echoPin, HIGH);
+  float duration = pulseIn(echoPin, HIGH);
   // Calculating the distance
-  distance = duration * 0.034 / 2; // Speed of sound wave divided by 2 (go and back)
+  float distance = (duration * 0.034) / 2; // Speed of sound wave divided by 2 (go and back)
   
   // 38 cm is the active height of the canister - 4 cm of sensor overhead = 34
   // the volume shall then be cca 3.4 * 3.6 * 2.8 = ~ 34 litres
   // current volume of water in the tank: (height - measValue)/height * fullVolume
-  tankState = (tankHeight - distance)/tankHeight * tankCapacity  //litres
+  return (tankHeight - distance)/tankHeight * tankCapacity;  //litres
   }
 
 void saveToCard(){
@@ -105,13 +118,14 @@ temp = dht.readTemperature();
 //Serial.print(lightValue);
 //Serial.println();
 
-Serial.print(F("Humidity: "));
-Serial.print(hum);
-Serial.print(F("%  Temperature: "));
-Serial.print(temp);
-Serial.print(F("°C "));
+//Serial.print(F("Humidity: "));
+//Serial.print(hum);
+//Serial.print(F("%  Temperature: "));
+//Serial.print(temp);
+//Serial.print(F("°C "));
 
-DynamicJsonDocument doc(128);
+DynamicJsonDocument doc(256);
+
 JsonObject moist = doc.createNestedObject("moist");
 JsonObject timestamp = doc.createNestedObject("timestamp");
 moist["moist0"] =wetVal0;

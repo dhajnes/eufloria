@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include <SoftwareSerial.h>
 
-SoftwareSerial s(D6,D5);
+SoftwareSerial s(D7,D8); //RX, TX
 int data;
 
 void setup() {
@@ -14,8 +14,8 @@ void setup() {
 }
  
 void loop() {
-  char buffer[200];
-  DynamicJsonDocument doc(128);
+  char buffer[512];
+  DynamicJsonDocument doc(256);
   deserializeJson(doc, s);
   serializeJsonPretty(doc, buffer);
   
