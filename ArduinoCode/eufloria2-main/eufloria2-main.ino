@@ -1,6 +1,6 @@
 #include "DHT.h"
 #include <SoftwareSerial.h>
-#include <ArduinoJson.h>
+//#include <ArduinoJson.h>
 #include <SPI.h>
 #include <SD.h>
 
@@ -54,7 +54,7 @@ struct Time {
 const float tankHeight = 36;  //cm
 const float tankCapacity = 36;  //litres - a coincidence :D
 float tankState = 0; //litres
-DynamicJsonDocument doc(256);
+//DynamicJsonDocument doc(256);
 
 void setup() {
   pinMode(pumpPin, OUTPUT);
@@ -69,17 +69,17 @@ void setup() {
   
 }
 
-Time getInternetTime(){
-  // send a serial comm reqeust for time
-  // for example a "t"
-  if(s.available()>0){
-    //s.write(data);
-
-    //doc.printTo(s);
-    serializeJsonPretty(doc, s);
-  }
-  
-  }
+//Time getInternetTime(){
+//  // send a serial comm reqeust for time
+//  // for example a "t"
+//  if(s.available()>0){
+//    //s.write(data);
+//
+//    //doc.printTo(s);
+//    serializeJsonPretty(doc, s);
+//  }
+//  
+//  }
 
 float checkWaterReserve(){
   // Clears the trigPin condition
@@ -124,28 +124,28 @@ temp = dht.readTemperature();
 //Serial.print(temp);
 //Serial.print(F("°C "));
 
-DynamicJsonDocument doc(256);
+//DynamicJsonDocument doc(256);
 
-JsonObject moist = doc.createNestedObject("moist");
-JsonObject timestamp = doc.createNestedObject("timestamp");
-moist["moist0"] =wetVal0;
-moist["moist1"] =wetVal1;
-moist["moist2"] =wetVal2;
-moist["moist3"] =wetVal3;
+//JsonObject moist = doc.createNestedObject("moist");
+//JsonObject timestamp = doc.createNestedObject("timestamp");
+//moist["moist0"] =wetVal0;
+//moist["moist1"] =wetVal1;
+//moist["moist2"] =wetVal2;
+//moist["moist3"] =wetVal3;
+//
+//doc["light"] = lightVal;
+//doc["temp"] = temp;
+//doc["hum"] = hum;
+//doc["tankstate"] = tankState;
+//timestamp["date"] = 210712;  //TODO time by NodeMCU
+//timestamp["time"] = 151927;  //TODO time by NodeMCU
 
-doc["light"] = lightVal;
-doc["temp"] = temp;
-doc["hum"] = hum;
-doc["tankstate"] = tankState;
-timestamp["date"] = 210712;  //TODO time by NodeMCU
-timestamp["time"] = 151927;  //TODO time by NodeMCU
-
-if(s.available()>0){
-    //s.write(data);
-
-    //doc.printTo(s);
-    serializeJsonPretty(doc, s);
-  }
+//if(s.available()>0){
+//    //s.write(data);
+//
+//    //doc.printTo(s);
+//    serializeJsonPretty(doc, s);
+//  }
   
 
 
