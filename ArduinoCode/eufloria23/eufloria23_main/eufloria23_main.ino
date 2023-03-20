@@ -1,9 +1,14 @@
 
 #include "DHT.h"
 #include <SPI.h>
-#include <SD.h>
+//#include <SD.h>
 #include <stdio.h>
 #include <Wire.h>
+#include <SoftwareSerial.h>
+#include <ArduinoJson.h>
+
+SoftwareSerial ard_2_node(12,11); // tx, rx
+
 
 // DHT constants 
 #define DHTPIN 10
@@ -34,7 +39,7 @@ float temp = 0;
 byte co2_lower_bits = 0;
 byte co2_upper_bits = 0;
 int co2_ppm = 0;
-volatile bool sensor_free = false;
+volatile bool sensor_free = true;
 
 // Moisture sensor variables
 int wetVal0 = 0;
@@ -52,7 +57,8 @@ void setup() {
   pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
   pinMode(echoPin, INPUT); // Sets the echoPin as an 
   
-  Serial.begin(9600);
+//  Serial.begin(19200);
+  ard_2_node.begin(9600);
   dht.begin();
 }
 
@@ -80,6 +86,7 @@ float echo_distance(){
 void loop() {
   
   delay(1000);
+  StaticJsonDocument<256> doc;
   
   hum = dht.readHumidity();
   temp = dht.readTemperature();
@@ -93,18 +100,19 @@ void loop() {
     Serial.println(F("Failed to read from DHT sensor!"));
     return;
   }
+
   
-  Serial.print(F("Humidity: "));
-  Serial.print(hum);
-  Serial.print(F("%  Temperature: "));
-  Serial.print(temp);
-  Serial.print(F("°C "));
-  Serial.print("Moisture reading: ");
-  Serial.print(wetVal0);
-  Serial.print(" Light value: ");
-  Serial.print(lightVal);
-  Serial.print(" Distance: ");
-  Serial.println(distance);
+//  Serial.print(F("Humidity: "));
+//  Serial.print(hum);
+//  Serial.print(F("%  Temperature: "));
+//  Serial.print(temp);
+//  Serial.print(F("°C "));
+//  Serial.print("Moisture reading: ");
+//  Serial.print(wetVal0);
+//  Serial.print(" Light value: ");
+//  Serial.print(lightVal);
+//  Serial.print(" Distance: ");
+//  Serial.println(distance);
   
 
   if (sensor_free) {
@@ -115,8 +123,23 @@ void loop() {
     co2_lower_bits = Wire.read(); 
     co2_upper_bits = Wire.read(); 
     co2_ppm = (co2_upper_bits << 8) | co2_lower_bits; //lower + upper shifted by 8 = resulting ppm
+    co2_ppm += 200;  // offeset
     Serial.print(F("CO2 ppm: "));
     Serial.println(co2_ppm); 
   }
+
+  doc["hum"] = hum;
+  doc["temp"] = temp;
+  doc["wet_i"] = wetVal0;
+  doc["light_i"] = lightVal;
+  doc["dist"] = distance;
+  doc["co2_ppm_i"] = co2_ppm;
+//  doc["hum"] = 40.1;
+//  doc["temp"] = 15.0;
+//  doc["wet_i"] = 0;
+//  doc["light_i"] = 0;
+//  doc["dist"] = 0;
+//  doc["co2_ppm_i"] = 0;
+  serializeJson(doc, ard_2_node);
 
 }
