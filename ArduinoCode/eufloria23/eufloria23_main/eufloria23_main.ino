@@ -22,12 +22,16 @@ SoftwareSerial ard_2_node(12,11); // tx, rx
 // Moisture sensor constants
 #define wetPin0 A0
 
+
 // Light sensor constants
 #define lightPin A1
 
 // Ultrasound sensor constants
 #define echoPin 8 
 #define trigPin 9 
+
+// Pump sensor constants
+#define pumpPin 3
 
 
 // DHT 11 sensor variables
@@ -41,30 +45,39 @@ byte co2_upper_bits = 0;
 int co2_ppm = 0;
 volatile bool sensor_free = true;
 
+const int AVG_BUFFER_SIZE = 5;
+float running_average_wet = 0;
+int bufferIndex = 0;
+float run_avg_arr[AVG_BUFFER_SIZE] = {0};
+
 // Moisture sensor variables
 int wetVal0 = 0;
 
 // Light sensor variables
 int lightVal = 0;
 
+// Pump variables
+bool pump_on = false;
 
-void setup() {
-  // pinmodes
-  pinMode(CO2_INTERRUPT, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(CO2_INTERRUPT), sensor_interrupt, FALLING );
-  Wire.begin();
+float get_run_avg(float new_meas){
 
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
-  pinMode(echoPin, INPUT); // Sets the echoPin as an 
+  run_avg_arr[bufferIndex] = new_meas;
+  bufferIndex = (bufferIndex + 1) % AVG_BUFFER_SIZE;
+
+  float sum = 0;
+  for (int i = 0; i < AVG_BUFFER_SIZE; i++){
+    sum += run_avg_arr[i];
+  }
   
-//  Serial.begin(19200);
-  ard_2_node.begin(9600);
-  dht.begin();
+  float avg = sum / AVG_BUFFER_SIZE;
+  return avg;
 }
+
 
 void sensor_interrupt() {
   sensor_free = true;  
 }
+
 
 float echo_distance(){
   // Clears the trigPin condition
@@ -80,6 +93,27 @@ float echo_distance(){
   float distance = (duration * 0.034) / 2; // Speed of sound wave divided by 2 (go and back)
   
   return distance;
+}
+
+
+
+
+
+
+
+void setup() {
+  // pinmodes
+  pinMode(CO2_INTERRUPT, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(CO2_INTERRUPT), sensor_interrupt, FALLING );
+  Wire.begin();
+
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an OUTPUT
+  pinMode(echoPin, INPUT); // Sets the echoPin as an 
+  pinMode(pumpPin, OUTPUT);
+  
+//  Serial.begin(19200);
+  ard_2_node.begin(9600);
+  dht.begin();
 }
 
 
@@ -99,6 +133,17 @@ void loop() {
   if (isnan(hum) || isnan(temp)) {
     Serial.println(F("Failed to read from DHT sensor!"));
     return;
+  }
+
+  running_average_wet = get_run_avg(float(wetVal0));
+
+  if (running_average_wet > 850.0){
+    pump_on = true;
+    digitalWrite(pumpPin, HIGH);
+  }
+  else {
+    pump_on = false;
+    digitalWrite(pumpPin, LOW);
   }
 
   
@@ -128,18 +173,16 @@ void loop() {
     Serial.println(co2_ppm); 
   }
 
+  
+
   doc["hum"] = hum;
   doc["temp"] = temp;
-  doc["wet_i"] = wetVal0;
+  doc["wet_i"] = int(running_average_wet);
   doc["light_i"] = lightVal;
   doc["dist"] = distance;
   doc["co2_ppm_i"] = co2_ppm;
-//  doc["hum"] = 40.1;
-//  doc["temp"] = 15.0;
-//  doc["wet_i"] = 0;
-//  doc["light_i"] = 0;
-//  doc["dist"] = 0;
-//  doc["co2_ppm_i"] = 0;
+  doc["pump_on"] = pump_on;
+
   serializeJson(doc, ard_2_node);
 
 }

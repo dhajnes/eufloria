@@ -28,8 +28,17 @@ static const unsigned char PROGMEM logo_bmp[] = {
   0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
 };
 
+struct Data{
+  float temp = 0;
+  float hum = 0;
+  float dist = 0;
+  int wet = 0;
+  int light = 0;
+  int co2_ppm = 0;
+  bool pump_on = false;
+  } data;
+
 void setup() {
-//  Serial.begin(9600);
   node_2_ard.begin(9600);
 
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
@@ -46,22 +55,31 @@ void setup() {
   
 }
 
+struct Data doc2data(struct Data data, StaticJsonDocument<256> &doc){
+  data.temp = doc["temp"];
+  data.hum = doc["hum"];
+  data.dist = doc["dist"];
+  data.wet = doc["wet_i"];
+  data.light = doc["light_i"];
+  data.co2_ppm = doc["co2_ppm_i"];
+  data.pump_on = doc["pump_on"];
+
+  return data;
+  }
+
 void loop() {
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, node_2_ard);
-
-//  if (error){
+  
+  if (error){
 //    Serial.println("Invalid JSON object");
 //    Serial.println(error.c_str());
-//    return;
-//  }
-
-  float temp = doc["temp"];
-  float hum = doc["hum"];
-  float dist = doc["dist"];
-  int wet = doc["wet_i"];
-  int light = doc["light_i"];
-  int co2_ppm = doc["co2_ppm_i"];
+    return;
+  }
+  else {
+    data = doc2data(data, doc);
+  }
+  
   
   
 //  Serial.println("Read JSON correctly.");
@@ -79,36 +97,69 @@ void loop() {
 //  Serial.println(co2_ppm);
 //  Serial.println("-------------");
 
-  drawDHT(temp, hum);
+  drawDHT(data);
   
 }
 
-void drawDHT(float temp, float hum){
+void drawDHT(struct Data data){
   // clear display
   display.clearDisplay();
+  display.setCursor(40,0);
+  display.print("| STATS |");
   
   // display temperature
   display.setTextSize(1);
-  display.setCursor(0,0);
-  display.print("Temperature: ");
-  display.setTextSize(2);
-  display.setCursor(0,10);
-  display.print(temp);
-  display.print(" ");
-  display.setTextSize(1);
-  display.cp437(true);
-  display.write(167);
-  display.setTextSize(2);
-  display.print("C");
+  display.setCursor(0,20);
+  display.print("T: " + String(int(data.temp)) + " C");
+
+  // display humidity
+  display.setCursor(63, 20);
+  display.print("| H: " + String(int(data.hum)) + " %"); 
+
+  // display moisture
+  display.setCursor(0, 30);
+  display.print("M: " + String(data.wet) + " -");
+
+  // display light
+  display.setCursor(63, 30);
+  display.print("| l: " + String(data.light) + " -");
+
+
+  // display dist
+  display.setCursor(0, 40);
+  display.print("d: " + String(data.dist) + " cm");
+
+  // display CO2
+  display.setCursor(0, 50);
+  display.print("CO2: " + String(data.co2_ppm) + " ppm");
+
+  // display pump status
+  display.setCursor(80, 40);
+  if (data.pump_on){
+    display.print("Pmp: ON");  
+  }
+  else{
+    display.print("Pmp: OFF");
+    }
+  
+//  display.print(int(data.temp));
+//  display.setCursor(0,10);
+//  display.print(temp);
+//  display.print(" ");
+//  display.setTextSize(1);
+//  display.cp437(true);
+//  display.write(167);
+//  display.setTextSize(1);
+//  display.print("C");
   
   // display humidity
-  display.setTextSize(1);
-  display.setCursor(0, 35);
-  display.print("Humidity: ");
-  display.setTextSize(2);
-  display.setCursor(0, 45);
-  display.print(hum);
-  display.print(" %"); 
+//  display.setTextSize(1);
+//  display.setCursor(0, 20);
+//  display.print("Humidity: ");
+//  display.setTextSize(1);
+//  display.setCursor(0, 30);
+//  display.print(hum);
+//  display.print(" %"); 
   
   display.display(); 
 }
