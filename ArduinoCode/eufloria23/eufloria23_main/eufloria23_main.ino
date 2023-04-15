@@ -7,7 +7,8 @@
 #include <SoftwareSerial.h>
 #include <ArduinoJson.h>
 
-SoftwareSerial ard_2_node(12,11); // tx, rx
+SoftwareSerial ard_2_node(12,11); // rx, tx
+SoftwareSerial ard_2_pc(0,1);
 
 
 // DHT constants 
@@ -112,15 +113,18 @@ void setup() {
   pinMode(pumpPin, OUTPUT);
   
 //  Serial.begin(19200);
-  ard_2_node.begin(9600);
+  ard_2_node.begin(19200);
+  ard_2_pc.begin(9600);
   dht.begin();
 }
 
 
 void loop() {
   
-  delay(1000);
+  delay(100);
   StaticJsonDocument<256> doc;
+  StaticJsonDocument<256> get_doc;
+  DeserializationError error = deserializeJson(get_doc, ard_2_node);
   
   hum = dht.readHumidity();
   temp = dht.readTemperature();
@@ -131,7 +135,7 @@ void loop() {
   float distance = echo_distance();
 
   if (isnan(hum) || isnan(temp)) {
-    Serial.println(F("Failed to read from DHT sensor!"));
+    ard_2_pc.println(F("Failed to read from DHT sensor!"));
     return;
   }
 
@@ -169,11 +173,11 @@ void loop() {
     co2_upper_bits = Wire.read(); 
     co2_ppm = (co2_upper_bits << 8) | co2_lower_bits; //lower + upper shifted by 8 = resulting ppm
     co2_ppm += 200;  // offeset
-    Serial.print(F("CO2 ppm: "));
-    Serial.println(co2_ppm); 
+    ard_2_pc.print(F("CO2 ppm: "));
+    ard_2_pc.println(co2_ppm); 
   }
 
-  
+  ard_2_pc.println("HELE!");
 
   doc["hum"] = hum;
   doc["temp"] = temp;

@@ -4,6 +4,11 @@
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
 
+#include <ESP8266HTTPClient.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+
 #include <SoftwareSerial.h>
 SoftwareSerial node_2_ard(D6,D5); // tx, rx
 
@@ -15,6 +20,21 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 #define LOGO_HEIGHT   40
 #define LOGO_WIDTH    24
+
+// Replace these with your own WiFi network credentials
+const char* ssid = "Hotspot";
+const char* password = "SPDPassword";
+
+// The IP address and port number of the remote server
+const char* serverIP = "10.42.0.1";
+const int serverPort = 1880;
+const char* urlPath = "/url";
+volatile bool START_WATERING = false;
+
+WiFiClient client;
+ESP8266WebServer server(80);
+
+
 static const unsigned char PROGMEM logo_bmp[] = { 
   0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
   0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x7, 
@@ -38,22 +58,6 @@ struct Data{
   bool pump_on = false;
   } data;
 
-void setup() {
-  node_2_ard.begin(9600);
-
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-//    Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-  }
-  display.display();
-  delay(2000); // Pause for 2 seconds
-
-  // Clear the buffer
-  display.clearDisplay();
-  drawLogo();
-  
-}
 
 struct Data doc2data(struct Data data, StaticJsonDocument<256> &doc){
   data.temp = doc["temp"];
@@ -67,9 +71,48 @@ struct Data doc2data(struct Data data, StaticJsonDocument<256> &doc){
   return data;
   }
 
+
+void setup() {
+  node_2_ard.begin(19200);
+
+  WiFi.begin(ssid, password);
+
+  // setup the WIFI client
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+//    Serial.print(".");
+  }
+
+  // setup the HTTP server
+  server.on("/esp", handleIncomingRequest);
+  server.begin();
+//  Serial.println("HTTP server started");
+
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+//    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+  
+  display.display();
+  delay(2000); // Pause for 2 seconds
+
+  // Clear the buffer
+  display.clearDisplay();
+  drawLogo();
+  
+}
+
+
 void loop() {
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, node_2_ard);
+
+  //TODO write logic for when to send and when not
+  
+  server.handleClient();
+  // Send POST request to the remote server
+  
   
   if (error){
 //    Serial.println("Invalid JSON object");
@@ -77,29 +120,86 @@ void loop() {
     return;
   }
   else {
+    String jsonString;
+    serializeJson(doc, jsonString);
+    sendPostRequest(jsonString);
     data = doc2data(data, doc);
   }
-  
-  
-  
-//  Serial.println("Read JSON correctly.");
-//  Serial.print("temp: ");
-//  Serial.println(temp);
-//  Serial.print("hum: ");
-//  Serial.println(hum);
-//  Serial.print("wet: ");
-//  Serial.println(wet);
-//  Serial.print("dist: ");
-//  Serial.println(dist);
-//  Serial.print("light: ");
-//  Serial.println(light);
-//  Serial.print("co2 ppm: ");
-//  Serial.println(co2_ppm);
-//  Serial.println("-------------");
+
+  if (START_WATERING){
+    StaticJsonDocument<256> doc;
+    doc["water"] = true;
+    unsigned long start_time = millis();
+    while (millis() - start_time < 5000) {
+//      node_2_ard.println(json_str);
+      serializeJson(doc, node_2_ard);
+      delay(500);
+    }
+    START_WATERING = false;
+  }
+ 
 
   drawDHT(data);
-  
+//  delay(50);
 }
+
+
+void sendPostRequest(String jsonPayload) {
+  if (!client.connect(serverIP, serverPort)) {
+//    Serial.println("Connection failed");
+    return;
+  }
+
+  // Prepare JSON payload
+//  StaticJsonDocument<256> jsonDoc;
+//  JsonArray tempArray = jsonDoc.createNestedArray("temp");
+//  tempArray.add(0);
+//  tempArray.add(2);
+//  tempArray.add(2);
+//
+//  String jsonPayload;
+//  serializeJson(jsonDoc, jsonPayload);
+
+  // Send the HTTP POST request
+  client.print(String("POST ") + urlPath + " HTTP/1.1\r\n" +
+               "Host: " + serverIP + "\r\n" +
+               "Content-Type: application/json\r\n" +
+               "Content-Length: " + jsonPayload.length() + "\r\n" +
+               "Connection: close\r\n\r\n" +
+               jsonPayload + "\r\n");
+
+  // Close the connection
+  client.stop();
+}
+
+
+void handleIncomingRequest() {
+  if (server.method() == HTTP_POST) {
+    String payload = server.arg("plain");
+    Serial.println("Received POST request:");
+    Serial.println(payload);
+    server.send(200, "application/json", "{\"status\":\"ok\"}");
+    
+    if (substr_in_str("water", payload)){
+      START_WATERING = true;
+    }
+  } else {
+    server.send(405, "text/plain", "Method Not Allowed");
+  }
+
+  
+
+}
+
+bool substr_in_str(String sub_string, String source_string){
+
+  if(source_string.indexOf(sub_string) >= 0){
+    return true;
+    }
+
+  return false;
+  }
+
 
 void drawDHT(struct Data data){
   // clear display
@@ -142,24 +242,6 @@ void drawDHT(struct Data data){
     display.print("Pmp: OFF");
     }
   
-//  display.print(int(data.temp));
-//  display.setCursor(0,10);
-//  display.print(temp);
-//  display.print(" ");
-//  display.setTextSize(1);
-//  display.cp437(true);
-//  display.write(167);
-//  display.setTextSize(1);
-//  display.print("C");
-  
-  // display humidity
-//  display.setTextSize(1);
-//  display.setCursor(0, 20);
-//  display.print("Humidity: ");
-//  display.setTextSize(1);
-//  display.setCursor(0, 30);
-//  display.print(hum);
-//  display.print(" %"); 
   
   display.display(); 
 }
