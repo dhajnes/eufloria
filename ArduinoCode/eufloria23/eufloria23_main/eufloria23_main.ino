@@ -37,8 +37,8 @@ SoftwareSerial ard_2_pc(0,1);
 
 // DHT 11 sensor variables
 DHT dht(DHTPIN, DHTTYPE);
-float hum = 0;
-float temp = 0;
+int hum = 0;
+int temp = 0;
 
 // CO2 sensor variables
 byte co2_lower_bits = 0;
@@ -122,8 +122,8 @@ void setup() {
 void loop() {
   
   delay(100);
-  StaticJsonDocument<256> doc;
-  StaticJsonDocument<256> get_doc;
+  StaticJsonDocument<128> doc;
+  StaticJsonDocument<128> get_doc;
   DeserializationError error = deserializeJson(get_doc, ard_2_node);
   
   hum = dht.readHumidity();
@@ -178,14 +178,15 @@ void loop() {
   }
 
   ard_2_pc.println("HELE!");
+  ard_2_pc.println(temp);
 
   doc["hum"] = hum;
   doc["temp"] = temp;
-  doc["wet_i"] = int(running_average_wet);
-  doc["light_i"] = lightVal;
+  doc["wet"] = int(running_average_wet);
+  doc["light"] = lightVal;
   doc["dist"] = distance;
-  doc["co2_ppm_i"] = co2_ppm;
-  doc["pump_on"] = pump_on;
+  doc["co2"] = co2_ppm;
+  doc["pump"] = pump_on;
 
   serializeJson(doc, ard_2_node);
 
