@@ -1,17 +1,10 @@
+#include <ArduinoJson.h>
+//#include <SoftwareSerial.h>
+//SoftwareSerial node_2_ard(D6,D5); // tx, rx
 #include <U8x8lib.h>
 
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include <ESP8266WebServer.h>
-
-#include <ArduinoJson.h>
-#include <SoftwareSerial.h>
-SoftwareSerial node_2_ard(D6,D5); // tx, rx
-
-// Replace these with your own WiFi network credentials
-//const char* ssid = "Hotspot";
-//const char* password = "SPDPassword";
-
 const char* ssid = "wutangwlan";
 const char* password = "hahahachichichi";
 
@@ -19,25 +12,29 @@ const char* password = "hahahachichichi";
 const char* serverIP = "10.42.0.1";
 const int serverPort = 1880;
 const char* urlPath = "/url";
+//
 
+volatile bool START_WATERING = false;
 WiFiClient client;
 U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(/* reset=*/ U8X8_PIN_NONE);
 
-volatile bool START_WATERING = false;
-DynamicJsonDocument doc(512);
+StaticJsonDocument<256> doc;
 
 void setup() {
   u8x8.begin();
   u8x8.setFont(u8x8_font_chroma48medium8_r);
 
   Serial.begin(9600);
-  node_2_ard.begin(19200);
+//  node_2_ard.begin(19200);
+  
   WiFi.begin(ssid, password);
   
   // setup the WIFI client
   while (WiFi.status() != WL_CONNECTED) {
+//    Serial.print(".");
     delay(500);
   }
+//  Serial.println("");
   
 }
 
@@ -51,7 +48,7 @@ struct Data{
   bool pump = false;
   } data;
 
-struct Data doc2data(struct Data data, DynamicJsonDocument &doc){
+struct Data doc2data(struct Data data, StaticJsonDocument<256> doc){
   data.temp = doc["temp"];
   data.hum = doc["hum"];
   data.dist = doc["dist"];
@@ -66,53 +63,50 @@ struct Data doc2data(struct Data data, DynamicJsonDocument &doc){
 
 void loop() {
 
-//  StaticJsonDocument<256> doc;
+  data = Data();
   
-  DeserializationError error = deserializeJson(doc, node_2_ard);
-
+  DeserializationError error = deserializeJson(doc, Serial);
+  
   if (error){
-    Serial.println("Not received");
+//    Serial.println("Not received.");
 //    Serial.print(error);
+    u8x8.clearDisplay();
+    u8x8.setCursor(4,0);
+    u8x8.print("| Incorrect Json |");
+    u8x8.refreshDisplay();
     return;
   }
   else {
-    Serial.println("Received json, drawing.");
     data = doc2data(data, doc);
-    Serial.print("Received for example: data.temp:");
-    Serial.println(data.temp);
-    Serial.print("Received for example: data[temp]:");
-    Serial.println(String(doc["temp"]));
-    Serial.print("Received for example: data.hum:");
-    Serial.println(data.hum);
-    Serial.print("Received for example: data.dist:");
-    Serial.println(data.dist);
-    Serial.print("Received for example: data.light:");
-    Serial.println(data.light);
+//    Serial.println("Received json, writing out.");
+//    
+//    Serial.print("Received for example: data.temp:");
+//    Serial.println(data.temp);
+//    Serial.print("Received for example: data.hum:");
+//    Serial.println(data.hum);
+//    Serial.print("Received for example: data.dist:");
+//    Serial.println(data.dist);
     String jsonString;
-//    StaticJsonDocument<256> RANDOMdoc;
-//    RANDOMdoc["temp"] = 1.0;
     serializeJson(doc, jsonString);
-//    sendPostRequest(jsonString);
-    delay(500);
-    
-    
-    
+    sendPostRequest(jsonString);
+     
   }
-//drawData(data);
+  drawData(data);
   
+
 }
 
 
 void sendPostRequest(String jsonPayload) {
-  Serial.println("Sending Post Request...");
+//  Serial.println("Sending Post Request...");
   if (!client.connect(serverIP, serverPort)) {
-    Serial.print("Couldn't connect to server with serverIP: ");
-    Serial.println(serverIP);
+//    Serial.print("Couldn't connect to server with serverIP: ");
+//    Serial.println(serverIP);
     client.stop();
     return;
   }
 
-  Serial.println("Connected to server, sending HTTP request.");
+//  Serial.println("Connected to server, sending HTTP request.");
   // Send the HTTP POST request
   client.print(String("POST ") + urlPath + " HTTP/1.1\r\n" +
                "Host: " + serverIP + "\r\n" +
@@ -128,9 +122,9 @@ void sendPostRequest(String jsonPayload) {
   while (client.connected() && k <= n_of_trials){ //&& (millis() - timeout < 500)) {
     if (client.available()) {
       String response = client.readStringUntil('\r');
-       Serial.println("Received response: " + response);
+//       Serial.println("Received response: " + response);
       k ++;
-      delay(100);
+//      delay(100);
       if (response.indexOf("water") >= 0) {
         START_WATERING = true;
       }

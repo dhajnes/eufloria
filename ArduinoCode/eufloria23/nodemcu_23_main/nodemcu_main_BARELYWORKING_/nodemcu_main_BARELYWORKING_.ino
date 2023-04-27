@@ -22,8 +22,10 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #define LOGO_WIDTH    24
 
 // Replace these with your own WiFi network credentials
-const char* ssid = "Hotspot";
-const char* password = "SPDPassword";
+//const char* ssid = "Hotspot";
+//const char* password = "SPDPassword";
+const char* ssid = "wutangwlan";
+const char* password = "hahahachichichi";
 
 // The IP address and port number of the remote server
 const char* serverIP = "10.42.0.1";

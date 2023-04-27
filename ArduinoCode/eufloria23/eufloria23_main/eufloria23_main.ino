@@ -4,12 +4,11 @@
 //#include <SD.h>
 #include <stdio.h>
 #include <Wire.h>
-#include <SoftwareSerial.h>
+//#include <SoftwareSerial.h>
 #include <ArduinoJson.h>
 
-SoftwareSerial ard_2_node(12,11); // rx, tx
-SoftwareSerial ard_2_pc(0,1);
-
+//SoftwareSerial ard_2_node(12,11); // rx, tx
+//SoftwareSerial ard_2_pc(0,1);
 
 // DHT constants 
 #define DHTPIN 10
@@ -20,19 +19,21 @@ SoftwareSerial ard_2_pc(0,1);
 #define ADRESS_CDM_7160 0x69
 #define ADRESS_REGISTER 0x03
 
-// Moisture sensor constants
 #define wetPin0 A0
-
-
-// Light sensor constants
 #define lightPin A1
-
-// Ultrasound sensor constants
-#define echoPin 8 
+#define echoPin 8  // Ultrasound sensor constants
 #define trigPin 9 
-
-// Pump sensor constants
 #define pumpPin 3
+
+struct Data{
+  int tmp = 0;
+  int hum = 0;
+  int dst = 0;
+  int wet = 0;
+  int lgh = 0;
+  int co2 = 0;
+  bool pmp = false;
+  } data;
 
 
 // DHT 11 sensor variables
@@ -51,13 +52,9 @@ float running_average_wet = 0;
 int bufferIndex = 0;
 float run_avg_arr[AVG_BUFFER_SIZE] = {0};
 
-// Moisture sensor variables
+// sensor variables
 int wetVal0 = 0;
-
-// Light sensor variables
 int lightVal = 0;
-
-// Pump variables
 bool pump_on = false;
 
 float get_run_avg(float new_meas){
@@ -100,7 +97,8 @@ float echo_distance(){
 
 
 
-
+//StaticJsonDocument<256> doc;
+//StaticJsonDocument<256> get_doc;
 
 void setup() {
   // pinmodes
@@ -112,19 +110,28 @@ void setup() {
   pinMode(echoPin, INPUT); // Sets the echoPin as an 
   pinMode(pumpPin, OUTPUT);
   
-//  Serial.begin(19200);
-  ard_2_node.begin(19200);
-  ard_2_pc.begin(9600);
+  Serial.begin(9600);
+//  ard_2_node.begin(19200);
+//  ard_2_pc.begin(9600);
   dht.begin();
+  
 }
+
+void send_data_over_serial(Data &data){
+    char buffer[64];
+    sprintf(buffer, "hum,tmp,wet,lgh,dst,co2,pmp\\r%03d,%03d,%03d,%03d,%04d,%04d,%d", data.hum, data.tmp, data.wet, data.lgh, data.dst, data.co2, data.pmp);
+    Serial.println(buffer);
+    delay(500);
+  }
 
 
 void loop() {
   
-  delay(100);
-  StaticJsonDocument<128> doc;
-  StaticJsonDocument<128> get_doc;
-  DeserializationError error = deserializeJson(get_doc, ard_2_node);
+  delay(50);
+//  StaticJsonDocument<256> doc;
+//  StaticJsonDocument<256> get_doc;
+  
+//  DeserializationError error = deserializeJson(get_doc, Serial);
   
   hum = dht.readHumidity();
   temp = dht.readTemperature();
@@ -135,11 +142,37 @@ void loop() {
   float distance = echo_distance();
 
   if (isnan(hum) || isnan(temp)) {
-    ard_2_pc.println(F("Failed to read from DHT sensor!"));
+//    ard_2_pc.println(F("Failed to read from DHT sensor!"));
     return;
   }
 
   running_average_wet = get_run_avg(float(wetVal0));
+
+// 750 seems to be wetness threshold for a week and a half unirrigated plant -> 750+ is dry 1024 is probably the driest, should equal 0
+// 450 - 600 freshly irrigated plant
+
+float WET_MAX = 1024.0;
+float WET_MIN = 450.0;
+
+if (wetVal0 > WET_MAX) wetVal0 = WET_MAX;
+if (wetVal0 < WET_MIN) wetVal0 = WET_MIN;
+
+ // flip values and normalize the to <0,1> range
+int wet = ( WET_MAX - WET_MIN - (wetVal0 - WET_MIN) ) * 100 / ( WET_MAX - WET_MIN );
+
+
+float LGH_MAX = 725.0;
+float LGH_MIN = 25.0;
+
+if (lightVal > LGH_MAX) lightVal = LGH_MAX;
+if (lightVal < LGH_MIN) lightVal = LGH_MIN;
+
+int lgh = ( LGH_MAX - LGH_MIN - (lightVal - LGH_MIN) ) * 100 / ( LGH_MAX - LGH_MIN );
+
+
+// lightwal  direct sunlight 15:
+// absolute darkness 800
+
 
   if (running_average_wet > 850.0){
     pump_on = true;
@@ -173,21 +206,28 @@ void loop() {
     co2_upper_bits = Wire.read(); 
     co2_ppm = (co2_upper_bits << 8) | co2_lower_bits; //lower + upper shifted by 8 = resulting ppm
     co2_ppm += 200;  // offeset
-    ard_2_pc.print(F("CO2 ppm: "));
-    ard_2_pc.println(co2_ppm); 
+//    ard_2_pc.print(F("CO2 ppm: "));
+//    ard_2_pc.println(co2_ppm); 
   }
+  data = Data();
+  data.hum = hum;
+  data.tmp = temp;
+  data.wet = wet;
+  data.lgh = lgh;
+  data.dst = distance;
+  data.co2 = co2_ppm;
+  data.pmp = pump_on;
 
-  ard_2_pc.println("HELE!");
-  ard_2_pc.println(temp);
+  send_data_over_serial(data); 
+//  
+//  doc["hum"] = hum;
+//  doc["temp"] = temp;
+//  doc["wet"] = int(running_average_wet);
+//  doc["light"] = lightVal;
+//  doc["dist"] = distance;
+//  doc["co2"] = co2_ppm;
+//  doc["pump"] = pump_on;
 
-  doc["hum"] = hum;
-  doc["temp"] = temp;
-  doc["wet"] = int(running_average_wet);
-  doc["light"] = lightVal;
-  doc["dist"] = distance;
-  doc["co2"] = co2_ppm;
-  doc["pump"] = pump_on;
-
-  serializeJson(doc, ard_2_node);
+//  serializeJson(doc, Serial);
 
 }
