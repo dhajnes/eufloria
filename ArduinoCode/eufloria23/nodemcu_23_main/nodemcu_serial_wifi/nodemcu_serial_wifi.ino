@@ -1,10 +1,25 @@
 
 // language=Arduino
 #include <Arduino.h>
+
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+
 #define BUFFER_SIZE 64
 // Arduino
 char buffer[BUFFER_SIZE];
 int bufferIndex = 0;
+
+const char* ssid = "wutangwlan";
+const char* password = "hahahachichichi";
+
+// The IP address and port number of the remote server
+const char* serverIP = "10.42.0.1";
+const int serverPort = 1880;
+const char* urlPath = "/url";
+
+volatile bool START_WATERING = false;
+WiFiClient client;
 
 struct Data
 {
@@ -17,10 +32,8 @@ struct Data
     bool pmp = false;
 } data;
 
-void setup()
-{
-    Serial.begin(9600);
-}
+
+
 // *hum,tmp,wet,lgh,dst,co2,pmp\r045,022,8264,1000,1000,0485,0\r0\n
 
 int ch2int(byte c)
@@ -193,6 +206,20 @@ String readMessageSerial()
 }
 
 
+void setup()
+{
+    Serial.begin(9600);
+    WiFi.begin(ssid, password);
+
+    // setup the WIFI client
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.print(".");
+        delay(500);
+    }
+}
+
+
 void loop()
 {
     
@@ -206,8 +233,46 @@ void loop()
     {
         data = Data();
         data = parseData(msg, data);
+        sendPostRequest(msg);
 
     }
 
-    
 }
+
+void sendPostRequest(String payload)
+{
+    //  Serial.println("Sending Post Request...");
+    if (!client.connect(serverIP, serverPort))
+    {
+           Serial.print("Couldn't connect to server with serverIP: ");
+           Serial.println(serverIP);
+    }
+
+    //  Serial.println("Connected to server, sending HTTP request.");
+    // Send the HTTP POST request
+    client.print(String("POST ") + urlPath + " HTTP/1.1\r\n" +
+                 "Host: " + serverIP + "\r\n" +
+                 "Content-Type: application/json\r\n" +
+                 "Content-Length: " + payload.length() + "\r\n" +
+                 "Connection: close\r\n\r\n" +
+                 payload + "\r\n");
+
+    // Listen for the server's response
+    //  unsigned long timeout = millis();
+    int n_of_trials = 5;
+    int k = 0;
+    while (client.connected() && k <= n_of_trials)
+    { //&& (millis() - timeout < 500)) {
+        if (client.available())
+        {
+            String response = client.readStringUntil('\r');
+            k++;
+            if (response.indexOf("water") >= 0)
+            {
+                START_WATERING = true;
+            }
+        }
+    }
+    client.stop();
+}
+
