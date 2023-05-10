@@ -1,281 +1,439 @@
-#include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <ArduinoJson.h>
 
-#include <ESP8266HTTPClient.h>
+// language=Arduino
+#include <Arduino.h>
+
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include <ESP8266WebServer.h>
+#include <U8x8lib.h>
 
-#include <SoftwareSerial.h>
-SoftwareSerial node_2_ard(D6,D5); // tx, rx
 
-#define SCREEN_WIDTH 128 
-#define SCREEN_HEIGHT 64 
-#define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-#define SCREEN_ADDRESS 0x3C
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#define BUFFER_SIZE 64
+// Arduino
+char buffer[BUFFER_SIZE];
+int bufferIndex = 0;
 
-#define LOGO_HEIGHT   40
-#define LOGO_WIDTH    24
+const char* ssid = "wutangwlan";
+const char* password = "hahahachichichi";
 
-// Replace these with your own WiFi network credentials
-const char* ssid = "Hotspot";
-const char* password = "SPDPassword";
+// const char* ssid = "Hotspot";
+// const char* password = "SPDPassword";
 
 // The IP address and port number of the remote server
 const char* serverIP = "10.42.0.1";
 const int serverPort = 1880;
 const char* urlPath = "/url";
+
 volatile bool START_WATERING = false;
+const int REFRESH_PERIOD = 1000;  //
+unsigned long REFRESH_TIMEOUT = millis();
+unsigned long FAKE_CALL_TIMER = millis();
+
+bool ONCE_TRIGGER = false;
 
 WiFiClient client;
-ESP8266WebServer server(80);
+U8X8_SSD1306_128X64_NONAME_HW_I2C u8x8(/* reset=*/U8X8_PIN_NONE);
 
+struct Data
+{
+    int tmp = 0;
+    int hum = 0;
+    int dst = 0;
+    int wet = 0;
+    int lgh = 0;
+    int co2 = 0;
+    bool pmp = false;
+} data;
 
-static const unsigned char PROGMEM logo_bmp[] = { 
-  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
-  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x7, 
-  0x0, 0x0, 0xf, 0x0, 0x0, 0x3f, 0x0, 0x0, 0xff, 0x0, 0x3, 0xff, 
-  0x0, 0xf, 0xff, 0x0, 0x3f, 0xff, 0x0, 0x7f, 0xee, 0x1, 0xff, 0xee, 
-  0x3, 0xff, 0xce, 0x7, 0xff, 0xde, 0x7, 0xff, 0x9c, 0xf, 0xff, 0x3c, 
-  0xf, 0xfe, 0x3c, 0x1f, 0xfe, 0x78, 0x1f, 0xf8, 0xf8, 0x1f, 0xf1, 0xf0, 
-  0x1f, 0xe3, 0xe0, 0x1f, 0xc7, 0xc0, 0x1f, 0x1f, 0x80, 0x1c, 0x3f, 0x0, 
-  0x10, 0xfc, 0x0, 0x3, 0xf0, 0x0, 0xf, 0xc0, 0x0, 0x1f, 0x0, 0x0, 
-  0x38, 0x0, 0x0, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
-  0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 
-};
+// *hum,tmp,wet,lgh,dst,co2,pmp\r045,022,8264,1000,1000,0485,0\r0\n
 
-struct Data{
-  float temp = 0;
-  float hum = 0;
-  float dist = 0;
-  int wet = 0;
-  int light = 0;
-  int co2_ppm = 0;
-  bool pump_on = false;
-  } data;
-
-
-struct Data doc2data(struct Data data, StaticJsonDocument<256> &doc){
-  data.temp = doc["temp"];
-  data.hum = doc["hum"];
-  data.dist = doc["dist"];
-  data.wet = doc["wet_i"];
-  data.light = doc["light_i"];
-  data.co2_ppm = doc["co2_ppm_i"];
-  data.pump_on = doc["pump_on"];
-
-  return data;
-  }
-
-
-void setup() {
-  node_2_ard.begin(19200);
-
-  WiFi.begin(ssid, password);
-
-  // setup the WIFI client
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-//    Serial.print(".");
-  }
-
-  // setup the HTTP server
-  server.on("/esp", handleIncomingRequest);
-  server.begin();
-//  Serial.println("HTTP server started");
-
-  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-//    Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-  }
-  
-  display.display();
-  delay(2000); // Pause for 2 seconds
-
-  // Clear the buffer
-  display.clearDisplay();
-  drawLogo();
-  
+int ch2int(byte c)
+{
+    return int(c) - int('0');
 }
 
+struct Data parseData(String message, Data data)
+{   
+    // Serial.print("[DEBUG] message: ");
+    // Serial.println(message);
 
-void loop() {
-  StaticJsonDocument<256> doc;
-  DeserializationError error = deserializeJson(doc, node_2_ard);
-
-  //TODO write logic for when to send and when not
-  
-  server.handleClient();
-  // Send POST request to the remote server
-  
-  
-  if (error){
-//    Serial.println("Invalid JSON object");
-//    Serial.println(error.c_str());
-    return;
-  }
-  else {
-    String jsonString;
-    serializeJson(doc, jsonString);
-    sendPostRequest(jsonString);
-    data = doc2data(data, doc);
-  }
-
-  if (START_WATERING){
-    StaticJsonDocument<256> doc;
-    doc["water"] = true;
-    unsigned long start_time = millis();
-    while (millis() - start_time < 5000) {
-//      node_2_ard.println(json_str);
-      serializeJson(doc, node_2_ard);
-      delay(500);
+    int index = message.indexOf(';');
+    if (index > 0)
+    {
+        message = message.substring(index+1, message.length());   
     }
-    START_WATERING = false;
-  }
- 
-
-  drawDHT(data);
-//  delay(50);
+    int start = 0;
+    int end = message.indexOf(",");
+    if (end > start)
+    {
+        data.hum = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf(",", start);
+    if (end > start)
+    {
+        data.tmp = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf(",", start);
+    if (end > start)
+    {
+        data.wet = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf(",", start);
+    if (end > start)
+    {
+        data.lgh = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf(",", start);
+    if (end > start)
+    {
+        data.dst = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf(",", start);
+    if (end > start)
+    {
+        data.co2 = message.substring(start, end).toInt();
+    }
+    start = end + 1;
+    end = message.indexOf("X", start);
+    if (end > start)
+    {
+        data.pmp = (message.substring(start, end).toInt() == 1);
+    }
+    return data;
 }
 
 
-void sendPostRequest(String jsonPayload) {
-  if (!client.connect(serverIP, serverPort)) {
-//    Serial.println("Connection failed");
-    return;
-  }
+String readMessageSerial()
+{
+    bool finished_reading = false;
+    bool started_reading = false;
+    while (!finished_reading)
+    {
+        if (Serial.available() > 0)
+        {
+            char incomingByte = Serial.read();
+            if (incomingByte == '*' || started_reading)
+            {   
+                if (incomingByte == '*')
+                {   
+                    buffer[bufferIndex++] = incomingByte;
+                    started_reading = true;
+                    continue;
+                }
+                else if (incomingByte == '\n')
+                {
+                    // Null-terminate the buffer
+                    buffer[bufferIndex] = '\0';
 
-  // Prepare JSON payload
-//  StaticJsonDocument<256> jsonDoc;
-//  JsonArray tempArray = jsonDoc.createNestedArray("temp");
-//  tempArray.add(0);
-//  tempArray.add(2);
-//  tempArray.add(2);
-//
-//  String jsonPayload;
-//  serializeJson(jsonDoc, jsonPayload);
+                    // Print the received string
+                    Serial.println(buffer);
 
-  // Send the HTTP POST request
-  client.print(String("POST ") + urlPath + " HTTP/1.1\r\n" +
-               "Host: " + serverIP + "\r\n" +
-               "Content-Type: application/json\r\n" +
-               "Content-Length: " + jsonPayload.length() + "\r\n" +
-               "Connection: close\r\n\r\n" +
-               jsonPayload + "\r\n");
+                    // Reset the buffer index
+                    bufferIndex = 0;
+                    finished_reading = true;
+                    started_reading = false;
+                    
+                    // compute the XOR the checksum
+                    byte checksum = 0;
+                    int k = 0;
+                    while (buffer[k] != 'X' && k < BUFFER_SIZE)
+                        {   
+                            checksum ^= buffer[k];
+                            k++;
+                        }
+                    // Serial.print("Computed checksum: ");
+                    // Serial.println(checksum);
+                    // Serial.println(b, HEX);
+                    // Serial.println(checksum);
+                    
+                    
+                    if (k+3 < BUFFER_SIZE)
+                    {   
+                        int provided_checksum = 100 * ch2int(buffer[k+1]) + 10 * ch2int(buffer[k+2]) + ch2int(buffer[k+3]);
+                        
+                        if (checksum != provided_checksum)          
+                        {   
+                            // if checksum incorrect, return "-1" string
+                            // if checksum correct
+                            Serial.print("Provided checksum: ");
+                            Serial.println(provided_checksum);
+                            Serial.print("incorrect checksum: ");
+                            Serial.println(checksum);
+                            sprintf(buffer, "%d", -1);
+                        }
+                        
+                    }
+                    else
+                    {   
+                        // if checksum incorrect, return "-1" string
+                        sprintf(buffer, "%d", -1);
+                    }
+                    
+                    String str_buffer(buffer);
 
-  // Close the connection
-  client.stop();
+                    return str_buffer;
+                }
+                else
+                {
+                    // Add the incoming byte to the buffer
+                    buffer[bufferIndex++] = incomingByte;
+
+                    // Check for buffer overflow
+                    if (bufferIndex >= BUFFER_SIZE)
+                    {
+                        Serial.println("Buffer overflow!");
+                        bufferIndex = 0;
+                        finished_reading = true;
+                        started_reading = false;
+                        sprintf(buffer, "%d", -1);
+                        String str_buffer(buffer);
+
+                        return str_buffer;
+                    }
+                }
+            }
+            
+            if (!started_reading) break;
+        }
+    }
+
+    sprintf(buffer, "%d", -1);
+    String str_buffer(buffer);
+
+    return str_buffer;
 }
 
 
-void handleIncomingRequest() {
-  if (server.method() == HTTP_POST) {
-    String payload = server.arg("plain");
-    Serial.println("Received POST request:");
-    Serial.println(payload);
-    server.send(200, "application/json", "{\"status\":\"ok\"}");
+void setup()
+{   
+    u8x8.begin();
+    u8x8.setFont(u8x8_font_chroma48medium8_r);
+
+    Serial.begin(19200);
+    WiFi.begin(ssid, password);
     
-    if (substr_in_str("water", payload)){
-      START_WATERING = true;
+    // setup the WIFI client
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.print(".");
+        delay(500);
     }
-  } else {
-    server.send(405, "text/plain", "Method Not Allowed");
-  }
+}
 
-  
+
+void loop()
+{
+    
+    
+    
+    String msg = readMessageSerial();
+    if (msg == "-1")
+    {
+        // Serial.println("Invalid message.");
+    }
+    else
+    {
+        data = Data();
+        data = parseData(msg, data);
+        drawData(data);
+
+        if ( millis() - REFRESH_TIMEOUT > REFRESH_PERIOD){
+            REFRESH_TIMEOUT = millis();
+            char json_like_msg[128];
+            sprintf(json_like_msg, "{\"%s\":%d, \"%s\":%d, \"%s\":%d, \"%s\":%d, \"%s\":%d, \"%s\":%d, \"%s\":%d}", "hum", data.hum, "tmp", data.tmp, "wet", data.wet, "lgh", data.lgh, "dst", data.dst, "co2", data.co2, "pmp", data.pmp);
+            String str(json_like_msg);
+            // Serial.println(json_like_msg);
+            sendPostRequest(json_like_msg);
+            if (START_WATERING){
+                
+                // send signal to arduino to start watering
+                Serial.println("\n\n>> SENDING DATA TO ARDUINO THAT NODEMCU RECEIVED MANUAL WATERING! <<\n\n");
+                for (int i = 0; i < 5; i++){
+                    char send_buffer[BUFFER_SIZE];
+                    snprintf(send_buffer, BUFFER_SIZE, "#%dX", START_WATERING);
+                    int k = 0;
+                    byte checksum = 0;
+                    while (send_buffer[k] != 'X' && k < BUFFER_SIZE)
+                    {
+                        checksum ^= send_buffer[k];
+                        k++;
+                    }
+                    snprintf(send_buffer, BUFFER_SIZE, "#%dX%03d", START_WATERING, checksum);
+                    
+                    Serial.println(send_buffer);
+                    // delay(100);
+                    // Serial.print("Computed checksum: ");
+                    // Serial.println(checksum);
+                    delay(500);
+                }
+            
+            }
+         
+        }   
+
+        if (data.pmp == 1){
+            Serial.println("\n\n >> RECEIVED DATA THAT PUMP IS ON, SETTING START_WATERING = FALSE! << \n\n");
+            START_WATERING = false;
+        } 
+    }
+
+    if (millis() - FAKE_CALL_TIMER > 7000){
+        if (ONCE_TRIGGER == false){
+            ONCE_TRIGGER = true;
+            START_WATERING = true;
+        }
+        FAKE_CALL_TIMER = millis();
+    }
+
+    
 
 }
 
-bool substr_in_str(String sub_string, String source_string){
-
-  if(source_string.indexOf(sub_string) >= 0){
-    return true;
+void sendPostRequest(String payload)
+{
+    //  Serial.println("Sending Post Request...");
+    if (!client.connect(serverIP, serverPort))
+    {
+           Serial.print("Couldn't connect to server with serverIP: ");
+           Serial.println(serverIP);
+           return;
     }
 
-  return false;
-  }
+    //  Serial.println("Connected to server, sending HTTP request.");
+    // Send the HTTP POST request
+    client.print(String("POST ") + urlPath + " HTTP/1.1\r\n" +
+                 "Host: " + serverIP + "\r\n" +
+                 "Content-Type: application/json\r\n" +
+                 "Content-Length: " + payload.length() + "\r\n" +
+                 "Connection: close\r\n\r\n" +
+                 payload + "\r\n");
+    Serial.print("Able to send the POST request to: ");
+    Serial.println(serverIP);
+    Serial.print("With URL path: ");
+    Serial.println(urlPath);
 
 
-void drawDHT(struct Data data){
-  // clear display
-  display.clearDisplay();
-  display.setCursor(40,0);
-  display.print("| STATS |");
-  
-  // display temperature
-  display.setTextSize(1);
-  display.setCursor(0,20);
-  display.print("T: " + String(int(data.temp)) + " C");
+    // // Listen for the server's response
+    //  unsigned long timeout = millis();
+    // int n_of_trials = 50;
+    // // int k = 0;
+    // while (client.connected() && (millis() - timeout < 500))
+    // { //&& (millis() - timeout < 500)) {
+    //     if (client.available())
+    //     {
+    //         // String response = client.readStringUntil('\r');
+    //         String response = client.readStringUntil('\n');
+    //         // k++;
+    //         Serial.print("Received response from server: ");
+    //         Serial.println(response);
+    //         if (response.indexOf("yes") >= 0)
+    //         {
+    //             START_WATERING = true;
+    //             Serial.print("\n\n >> START_WATERING: ");
+    //             Serial.println(START_WATERING);
+    //         }
+    //     }
+    // }
+    // client.stop();
 
-  // display humidity
-  display.setCursor(63, 20);
-  display.print("| H: " + String(int(data.hum)) + " %"); 
+    unsigned long timeout = millis();
+    bool headersParsed = false;
+    String payloadData = "";
 
-  // display moisture
-  display.setCursor(0, 30);
-  display.print("M: " + String(data.wet) + " -");
-
-  // display light
-  display.setCursor(63, 30);
-  display.print("| l: " + String(data.light) + " -");
-
-
-  // display dist
-  display.setCursor(0, 40);
-  display.print("d: " + String(data.dist) + " cm");
-
-  // display CO2
-  display.setCursor(0, 50);
-  display.print("CO2: " + String(data.co2_ppm) + " ppm");
-
-  // display pump status
-  display.setCursor(80, 40);
-  if (data.pump_on){
-    display.print("Pmp: ON");  
-  }
-  else{
-    display.print("Pmp: OFF");
+    while (client.connected() && (millis() - timeout < 500))
+    {
+        if (client.available())
+        {
+            if (!headersParsed)
+            {
+                String line = client.readStringUntil('\n');
+                if (line == "\r")
+                {
+                    headersParsed = true;
+                }
+            }
+            else
+            {
+                payloadData += client.readStringUntil('\n');
+            }
+        }
     }
-  
-  
-  display.display(); 
+
+    client.stop();
+
+    if (payloadData.length() > 0)
+    {
+        Serial.print("Received payload from server: ");
+        Serial.println(payloadData);
+
+        if (payloadData.indexOf("\"water\": \"yes\"") >= 0)
+        {
+            START_WATERING = true;
+            Serial.print("\n\n >> START_WATERING: ");
+            Serial.println(START_WATERING);
+        }
+    }
 }
 
-void drawLogo(void) {
-  display.clearDisplay();
+void drawData(struct Data data)
+{
+    // clear display
+    u8x8.clearDisplay();
+    u8x8.setCursor(4, 0);
+    u8x8.print("| STATS |");
 
-  display.drawBitmap(
-    (display.width()  - LOGO_WIDTH ) / 2,
-    (display.height() - LOGO_HEIGHT) / 2 - 10,
-    logo_bmp, LOGO_WIDTH, LOGO_HEIGHT, 1);
+    // display temperature
+    u8x8.setFont(u8x8_font_chroma48medium8_r);
+    u8x8.setCursor(0, 1);
+    u8x8.print("T: ");
+    u8x8.print(int(data.tmp));
+    u8x8.print(" C");
+    
+    //  // display humidity
+    u8x8.setCursor(7, 1);
+    u8x8.print("| H: ");
+    u8x8.print(int(data.hum));
+    u8x8.print(" %");
 
-  display.setTextSize(1);  
-  display.setTextColor(SSD1306_WHITE); // Draw white text
-  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+    //  // display moisture
+    u8x8.setCursor(0, 2);
+    u8x8.print("M: ");
+    u8x8.print(data.wet);
+     u8x8.print(" %");
 
-  display.setCursor(display.width()/2 - 25, 44);
-  display.println(F("eufloria"));
-  display.display();
+    //  // display light
+    u8x8.setCursor(7, 2);
+    u8x8.print("| l: ");
+    u8x8.print(data.lgh);
+     u8x8.print(" %");
 
-  display.setCursor(display.width()/2 - 10, 54);
-  display.println(F("v.23"));
-  display.display();
-  
-  display.invertDisplay(true);
-  display.display();
-  delay(1000);
-  display.invertDisplay(false);
-  display.display();
-  delay(1000);
-  display.invertDisplay(true);
-  display.display();
-  delay(1000);
-  display.invertDisplay(false);
-  display.display();
-  delay(1000);
+    // display dist
+    u8x8.setCursor(0, 3);
+    u8x8.print("d: ");
+    u8x8.print(data.dst);
+    u8x8.print(" cm");
+
+    // display CO2
+    u8x8.setCursor(0, 4);
+    u8x8.print("CO2: ");
+    u8x8.print(data.co2);
+    u8x8.print(" ppm");
+
+    // display pump status
+    if (data.pmp)
+    {
+        u8x8.setCursor(0, 5);
+        u8x8.print("Pmp: ON");
+    }
+    else
+    {
+        u8x8.setCursor(0, 5);
+        u8x8.print("Pmp: OFF");
+    }
+
+    u8x8.refreshDisplay();
 }

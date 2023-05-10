@@ -29,6 +29,13 @@
 char buffer[BUFFER_SIZE];
 int strBufferIndex = 0;
 
+char reading_buffer[BUFFER_SIZE];
+int reading_strBufferIndex = 0;
+
+unsigned long previousMillis = 0;
+const unsigned long SENDING_INTERVAL = 5000;
+
+
 struct Data
 {
     int tmp = 0;
@@ -65,6 +72,7 @@ float run_avg_arr[AVG_BUFFER_SIZE] = {0};
 int wetVal0 = 0;
 int lightVal = 0;
 bool pump_on = false;
+int send_pump_on_k_times = 5;
 
 float get_run_avg(float new_meas)
 {
@@ -116,7 +124,7 @@ void setup()
     pinMode(echoPin, INPUT);  // Sets the echoPin as an
     pinMode(pumpPin, OUTPUT);
 
-    Serial.begin(9600);
+    Serial.begin(19200);
     // Serial.begin(19200);
     //  ard_2_node.begin(19200);
     //  ard_2_pc.begin(9600);
@@ -126,21 +134,26 @@ void setup()
 void loop()
 {
 
-    delay(100);
+    delay(50);
     //  StaticJsonDocument<256> doc;
     //  StaticJsonDocument<256> get_doc;
 
     //  DeserializationError error = deserializeJson(get_doc, Serial);
-
+    unsigned long currentMillis = millis();
+    
     String msg = readMessageSerial();
-    if (msg != "-1")
+    // Serial.println(msg);
+    bool start_watering = false;
+
+    if (msg.compareTo("-1") != 0)  // compareTo() returns index of identical substring until the end, so if returns 0 then identical
     {
         Serial.print("\n\n >>start_watering_msg: ");
         Serial.println(msg);
+        start_watering = start_watering_msg(msg);
         
     }
     
-    bool start_watering = start_watering_msg(msg);
+    
 
 
     hum = dht.readHumidity();
@@ -186,7 +199,7 @@ void loop()
         lightVal = LGH_MIN;
 
     int lgh = (LGH_MAX - LGH_MIN - (lightVal - LGH_MIN)) * 100 / (LGH_MAX - LGH_MIN);
-
+    
 
 
     if (running_average_wet > 850.0 || start_watering)
@@ -198,6 +211,7 @@ void loop()
             while (millis() - startTime < timer1) {
                 pump_on = true;
                 digitalWrite(pumpPin, HIGH);
+                send_pump_on_k_times = 5;
             }
         }        
     }
@@ -220,16 +234,25 @@ void loop()
                                                           //    ard_2_pc.print(F("CO2 ppm: "));
                                                           //    ard_2_pc.println(co2_ppm);
     }
-    data = Data();
-    data.hum = hum;
-    data.tmp = temp;
-    data.wet = wet;
-    data.lgh = lgh;
-    data.dst = distance;
-    data.co2 = co2_ppm;
-    data.pmp = pump_on;
-
-    send_data_over_serial(data);
+    
+    if (currentMillis - previousMillis >= SENDING_INTERVAL) 
+    {   
+        if (send_pump_on_k_times > 0){
+            pump_on = true;
+            send_pump_on_k_times--;
+        }
+        data = Data();
+        data.hum = hum;
+        data.tmp = temp;
+        data.wet = wet;
+        data.lgh = lgh;
+        data.dst = distance;
+        data.co2 = co2_ppm;
+        data.pmp = pump_on;
+        // Update the previousMillis variable
+        previousMillis = currentMillis;
+        send_data_over_serial(data);
+    }
 
 }
 
@@ -256,51 +279,56 @@ void send_data_over_serial(Data &data)
     Serial.println(buffer);
 
     delay(500);
+    // Serial.flush();
 }
 
 
 String readMessageSerial()
-{
+{   
+
+    
     bool finished_reading = false;
     bool started_reading = false;
     while (!finished_reading)
     {
         if (Serial.available() > 0)
         {   
-            Serial.println("AVAILABLE.");
+            // Serial.println("AVAILABLE.");
             char incomingByte = Serial.read();
-            Serial.print("CHAR: ");
-            Serial.println(incomingByte);
+            // Serial.print("CHAR: ");
+            // Serial.println(incomingByte);
             if (incomingByte == '#' || started_reading)
             {   
-                Serial.println("STARTED READING.");
+                // Serial.println("STARTED READING.");
                 if (incomingByte == '#')
                 {   
-                    Serial.print("BECAUSE INCOMING BYTE IS.");
-                    Serial.println(incomingByte);
-                    buffer[strBufferIndex++] = incomingByte;
+                    // Serial.print("BECAUSE INCOMING BYTE IS.");
+                    // Serial.println(incomingByte);
+                    reading_buffer[reading_strBufferIndex++] = incomingByte;
                     started_reading = true;
                     continue;
                 }
                 else if (incomingByte == '\n')
                 {
-                    // Null-terminate the buffer
-                    buffer[strBufferIndex] = '\0';
+                    // Null-terminate the reading_buffer
+                    reading_buffer[reading_strBufferIndex] = '\0';
 
                     // Print the received string
-                    Serial.println(buffer);
+                    Serial.println(reading_buffer);
 
-                    // Reset the buffer index
-                    strBufferIndex = 0;
+                    // Reset the reading_buffer index
+                    reading_strBufferIndex = 0;
                     finished_reading = true;
                     started_reading = false;
                     
                     // compute the XOR the checksum
                     byte checksum = 0;
                     int k = 0;
-                    while (buffer[k] != 'X' && k < BUFFER_SIZE)
+                    while (reading_buffer[k] != 'X' && k < BUFFER_SIZE)
                         {
-                            checksum ^= buffer[k];
+                            // Serial.print("reading_buffer[k]: ");
+                            // Serial.println(reading_buffer[k]);
+                            checksum ^= reading_buffer[k];
                             k++;
                         }
                     Serial.print("Computed checksum: ");
@@ -310,8 +338,10 @@ String readMessageSerial()
                     
                     
                     if (k+3 < BUFFER_SIZE)
-                    {   
-                        int provided_checksum = 100 * ch2int(buffer[k+1]) + 10 * ch2int(buffer[k+2]) + ch2int(buffer[k+3]);
+                    {   Serial.println(ch2int(reading_buffer[k+1]));
+                        Serial.println(ch2int(reading_buffer[k+2]));
+                        Serial.println(ch2int(reading_buffer[k+3]));
+                        int provided_checksum = 100 * ch2int(reading_buffer[k+1]) + 10 * ch2int(reading_buffer[k+2]) + ch2int(reading_buffer[k+3]);
                         
                         if (checksum != provided_checksum)          
                         {   
@@ -321,34 +351,34 @@ String readMessageSerial()
                             Serial.println(provided_checksum);
                             Serial.print("incorrect checksum: ");
                             Serial.println(checksum);
-                            sprintf(buffer, "%d", -1);
+                            sprintf(reading_buffer, "%d", -1);
                         }
                         
                     }
                     else
                     {   
                         // if checksum incorrect, return "-1" string
-                        sprintf(buffer, "%d", -1);
+                        sprintf(reading_buffer, "%d", -1);
                     }
                     
-                    String str_buffer(buffer);
+                    String str_buffer(reading_buffer);
 
                     return str_buffer;
                 }
                 else
                 {
-                    // Add the incoming byte to the buffer
-                    buffer[strBufferIndex++] = incomingByte;
+                    // Add the incoming byte to the reading_buffer
+                    reading_buffer[reading_strBufferIndex++] = incomingByte;
 
-                    // Check for buffer overflow
-                    if (strBufferIndex >= BUFFER_SIZE)
+                    // Check for reading_buffer overflow
+                    if (reading_strBufferIndex >= BUFFER_SIZE)
                     {
                         Serial.println("Buffer overflow!");
-                        strBufferIndex = 0;
+                        reading_strBufferIndex = 0;
                         finished_reading = true;
                         started_reading = false;
-                        sprintf(buffer, "%d", -1);
-                        String str_buffer(buffer);
+                        sprintf(reading_buffer, "%d", -1);
+                        String str_buffer(reading_buffer);
 
                         return str_buffer;
                     }
@@ -360,8 +390,8 @@ String readMessageSerial()
         // finished_reading = true;
     }
 
-    sprintf(buffer, "%d", -1);
-    String str_buffer(buffer);
+    sprintf(reading_buffer, "%d", -1);
+    String str_buffer(reading_buffer);
 
     return str_buffer;
 }
@@ -372,12 +402,12 @@ bool start_watering_msg(String message)
     Serial.println(message);
     bool start_watering = 0;
 
-    int index = message.indexOf(';');
-    if (index > 0)
-    {
-        message = message.substring(index+1, message.length());
-    }
-    int start = 0;
+    // int index = 0;
+    // if (index > 0)
+    // {
+    //     message = message.substring(index+1, message.length());
+    // }
+    int start = 1;  // skipping the #
     int end = message.indexOf("X");
     
     if (end > start)
