@@ -12,11 +12,11 @@
 char buffer[BUFFER_SIZE];
 int bufferIndex = 0;
 
-const char* ssid = "wutangwlan";
-const char* password = "hahahachichichi";
+// const char* ssid = "wutangwlan";
+// const char* password = "hahahachichichi";
 
-// const char* ssid = "Hotspot";
-// const char* password = "SPDPassword";
+const char* ssid = "Hotspot";
+const char* password = "SPDPassword";
 
 // The IP address and port number of the remote server
 const char* serverIP = "10.42.0.1";
@@ -111,8 +111,20 @@ String readMessageSerial()
 {
     bool finished_reading = false;
     bool started_reading = false;
+    unsigned long timeout = 5000;
+    unsigned long read_start = millis();
     while (!finished_reading)
-    {
+    {   
+        if (millis() - read_start > timeout){
+            Serial.println("Timeout on reading.");
+            bufferIndex = 0;
+            finished_reading = true;
+            started_reading = false;
+            sprintf(buffer, "%d", -1);
+            String str_buffer(buffer);
+
+            return str_buffer;
+        }
         if (Serial.available() > 0)
         {
             char incomingByte = Serial.read();
@@ -219,7 +231,7 @@ void setup()
     // setup the WIFI client
     while (WiFi.status() != WL_CONNECTED)
     {
-        Serial.print(".");
+        Serial.println("connecting");
         delay(500);
     }
 }
@@ -231,7 +243,7 @@ void loop()
     
     
     String msg = readMessageSerial();
-    if (msg == "-1")
+    if (msg.compareTo("-1") == 0)
     {
         // Serial.println("Invalid message.");
     }
@@ -276,18 +288,18 @@ void loop()
         }   
 
         if (data.pmp == 1){
-            Serial.println("\n\n >> RECEIVED DATA THAT PUMP IS ON, SETTING START_WATERING = FALSE! << \n\n");
+            // Serial.println("\n\n >> RECEIVED DATA THAT PUMP IS ON, SETTING START_WATERING = FALSE! << \n\n");
             START_WATERING = false;
         } 
     }
 
-    if (millis() - FAKE_CALL_TIMER > 7000){
-        if (ONCE_TRIGGER == false){
-            ONCE_TRIGGER = true;
-            START_WATERING = true;
-        }
-        FAKE_CALL_TIMER = millis();
-    }
+    // if (millis() - FAKE_CALL_TIMER > 7000){
+    //     if (ONCE_TRIGGER == false){
+    //         ONCE_TRIGGER = true;
+    //         START_WATERING = true;
+    //     }
+    //     FAKE_CALL_TIMER = millis();
+    // }
 
     
 

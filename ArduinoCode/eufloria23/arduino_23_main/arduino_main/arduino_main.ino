@@ -289,8 +289,20 @@ String readMessageSerial()
     
     bool finished_reading = false;
     bool started_reading = false;
+    unsigned long timeout = 5000;
+    unsigned long read_start = millis();
     while (!finished_reading)
-    {
+    {   
+        if (millis() - read_start > timeout){
+            Serial.println("Timeout on reading.");
+            reading_strBufferIndex = 0;
+            finished_reading = true;
+            started_reading = false;
+            sprintf(reading_buffer, "%d", -1);
+            String str_buffer(reading_buffer);
+
+            return str_buffer;
+        }
         if (Serial.available() > 0)
         {   
             // Serial.println("AVAILABLE.");
@@ -331,8 +343,8 @@ String readMessageSerial()
                             checksum ^= reading_buffer[k];
                             k++;
                         }
-                    Serial.print("Computed checksum: ");
-                    Serial.println(checksum);
+                    // Serial.print("Computed checksum: ");
+                    // Serial.println(checksum);
                     // Serial.println(b, HEX);
                     // Serial.println(checksum);
                     
