@@ -32,6 +32,9 @@ int strBufferIndex = 0;
 char reading_buffer[BUFFER_SIZE];
 int reading_strBufferIndex = 0;
 
+const float TANK_POS_MAX = 13.0; // cm
+const float TANK_POS_MIN = 2.0; // cm
+
 unsigned long previousMillis = 0;
 const unsigned long SENDING_INTERVAL = 5000;
 
@@ -72,7 +75,7 @@ float run_avg_arr[AVG_BUFFER_SIZE] = {0};
 int wetVal0 = 0;
 int lightVal = 0;
 bool pump_on = false;
-int send_pump_on_k_times = 5;
+int send_pump_on_k_times = 0;
 
 float get_run_avg(float new_meas)
 {
@@ -162,7 +165,18 @@ void loop()
     wetVal0 = analogRead(wetPin0);
     lightVal = analogRead(lightPin);
 
-    float distance = echo_distance();
+
+
+    float dst = echo_distance();
+
+    // transform distance to water tank status    
+    if (dst > TANK_POS_MAX)
+        dst = TANK_POS_MAX;
+    if (dst < TANK_POS_MIN)
+        dst = TANK_POS_MIN;
+
+    int distance = (TANK_POS_MAX - TANK_POS_MIN - (dst - TANK_POS_MIN)) * 100 / (TANK_POS_MAX - TANK_POS_MIN);
+   
 
     if (isnan(hum) || isnan(temp))
     {
@@ -200,9 +214,14 @@ void loop()
 
     int lgh = (LGH_MAX - LGH_MIN - (lightVal - LGH_MIN)) * 100 / (LGH_MAX - LGH_MIN);
     
+    // Serial.print("Start watering: ");
+    // Serial.println(start_watering);
+
+    // Serial.print("Pump on: ");
+    // Serial.println(pump_on);
 
 
-    if (running_average_wet > 850.0 || start_watering)
+    if (start_watering)
     {   
         unsigned long startTime = millis();
         unsigned long timer1 = 1000;  // 1 second timer
@@ -213,6 +232,8 @@ void loop()
                 digitalWrite(pumpPin, HIGH);
                 send_pump_on_k_times = 5;
             }
+            // digitalWrite(pumpPin, LOW);
+            // pump_on = false;
         }        
     }
     else
@@ -350,17 +371,18 @@ String readMessageSerial()
                     
                     
                     if (k+3 < BUFFER_SIZE)
-                    {   Serial.println(ch2int(reading_buffer[k+1]));
-                        Serial.println(ch2int(reading_buffer[k+2]));
-                        Serial.println(ch2int(reading_buffer[k+3]));
+                    {   
+                        //Serial.println(ch2int(reading_buffer[k+1]));
+                        // Serial.println(ch2int(reading_buffer[k+2]));
+                        // Serial.println(ch2int(reading_buffer[k+3]));
                         int provided_checksum = 100 * ch2int(reading_buffer[k+1]) + 10 * ch2int(reading_buffer[k+2]) + ch2int(reading_buffer[k+3]);
                         
                         if (checksum != provided_checksum)          
                         {   
                             // if checksum incorrect, return "-1" string
                             // if checksum correct
-                            Serial.print("Provided checksum: ");
-                            Serial.println(provided_checksum);
+                            // Serial.print("Provided checksum: ");
+                            // Serial.println(provided_checksum);
                             Serial.print("incorrect checksum: ");
                             Serial.println(checksum);
                             sprintf(reading_buffer, "%d", -1);
@@ -425,6 +447,9 @@ bool start_watering_msg(String message)
     if (end > start)
     {
         start_watering = message.substring(start, end).toInt();
+    }
+    if (pump_on == true){
+        start_watering = false;
     }
     
     return start_watering;

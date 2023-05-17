@@ -12,11 +12,11 @@
 char buffer[BUFFER_SIZE];
 int bufferIndex = 0;
 
-// const char* ssid = "wutangwlan";
-// const char* password = "hahahachichichi";
+const char* ssid = "wutangwlan";
+const char* password = "hahahachichichi";
 
-const char* ssid = "Hotspot";
-const char* password = "SPDPassword";
+// const char* ssid = "Hotspot";
+// const char* password = "SPDPassword";
 
 // The IP address and port number of the remote server
 const char* serverIP = "10.42.0.1";
@@ -253,6 +253,11 @@ void loop()
         data = parseData(msg, data);
         drawData(data);
 
+        if (data.pmp == 1){
+            // Serial.println("\n\n >> RECEIVED DATA THAT PUMP IS ON, SETTING START_WATERING = FALSE! << \n\n");
+            START_WATERING = false;
+        } 
+
         if ( millis() - REFRESH_TIMEOUT > REFRESH_PERIOD){
             REFRESH_TIMEOUT = millis();
             char json_like_msg[128];
@@ -280,26 +285,24 @@ void loop()
                     // delay(100);
                     // Serial.print("Computed checksum: ");
                     // Serial.println(checksum);
-                    delay(500);
+                    delay(500); 
                 }
+
+                delay(5000); // wait for arduino to catch up
             
             }
          
         }   
-
-        if (data.pmp == 1){
-            // Serial.println("\n\n >> RECEIVED DATA THAT PUMP IS ON, SETTING START_WATERING = FALSE! << \n\n");
-            START_WATERING = false;
-        } 
+ 
     }
 
-    // if (millis() - FAKE_CALL_TIMER > 7000){
-    //     if (ONCE_TRIGGER == false){
-    //         ONCE_TRIGGER = true;
-    //         START_WATERING = true;
-    //     }
-    //     FAKE_CALL_TIMER = millis();
-    // }
+    if (millis() - FAKE_CALL_TIMER > 7000){
+        if (ONCE_TRIGGER == false){
+            ONCE_TRIGGER = true;
+            START_WATERING = true;
+        }
+        FAKE_CALL_TIMER = millis();
+    }
 
     
 
@@ -425,9 +428,9 @@ void drawData(struct Data data)
 
     // display dist
     u8x8.setCursor(0, 3);
-    u8x8.print("d: ");
+    u8x8.print("Tank: ");
     u8x8.print(data.dst);
-    u8x8.print(" cm");
+    u8x8.print(" %");
 
     // display CO2
     u8x8.setCursor(0, 4);
